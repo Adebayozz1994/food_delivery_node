@@ -39,3 +39,17 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server running on PORT: ${PORT}`);
 });
+
+
+app.get('/api/user', (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ message: 'Unauthorized' });
+  
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      res.json({ firstName: decoded.firstName, lastName: decoded.lastName, email: decoded.email });
+    } catch {
+      res.status(401).json({ message: 'Invalid token' });
+    }
+  });
+  

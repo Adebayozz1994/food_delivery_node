@@ -21,8 +21,8 @@ function sendUniqueNumberToEmail(email, adminId) {
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: process.env.EMAIL_USER, // set in your .env file
-        pass: process.env.EMAIL_PASS  // set in your .env file
+        user: process.env.EMAIL_USER, 
+        pass: process.env.EMAIL_PASS 
       }
     });
 
@@ -96,6 +96,7 @@ const loginUser = async (req, res) => {
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
+
 
 // Verify the provided JWT token.
 const verifyToken = (req, res) => {
