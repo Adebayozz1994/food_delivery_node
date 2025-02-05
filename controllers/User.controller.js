@@ -3,8 +3,9 @@ const User = require('../models/User');
 const bcrypt = require("bcryptjs");
 const nodemailer = require('nodemailer');
 require("dotenv").config();
-const SECRET = process.env.SECRET;
 const jwt = require("jsonwebtoken");
+
+const JWT_SECRET = process.env.JWT_SECRET;
 
 /* --------------------- Helper Functions --------------------- */
 
@@ -16,7 +17,7 @@ const generateUniqueNumber = () => {
 };
 
 // Send an email containing the unique admin ID
-function sendUniqueNumberToEmail(email, adminId) {
+const sendUniqueNumberToEmail = (email, adminId) => {
   return new Promise((resolve, reject) => {
     const transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -37,16 +38,15 @@ function sendUniqueNumberToEmail(email, adminId) {
       if (error) {
         reject(error);
       } else {
-        resolve();
+        resolve(info);
       }
     });
   });
-}
+};
 
 /* --------------------- Endpoints --------------------- */
 
 // Register (for both users and admins)
-// If role is "admin", generate a unique adminId and send it by email.
 const registerUser = async (req, res) => {
   try {
     const { firstName, lastName, email, password, role } = req.body;
@@ -73,35 +73,29 @@ const loginUser = async (req, res) => {
       console.log("User not found");
       return res.status(404).json({ message: "User not found" });
     }
-    bcrypt.compare(password, user.password, (err, match) => {
-      if (err) {
-        console.log("Error comparing passwords:", err);
-        return res.status(500).json({ message: "Internal Server Error" });
-      }
-      if (!match) {
-        console.log("Incorrect password");
-        return res.status(401).json({ message: "Incorrect password" });
-      } else {
-        const token = jwt.sign(
-          { id: user._id, role: user.role, email: user.email },
-          SECRET,
-          { expiresIn: '1h' }
-        );
-        console.log(`${user.role} signed in successfully`);
-        res.json({ message: `${user.role} signed in successfully`, status: true, user, token });
-      }
-    });
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      console.log("Incorrect password");
+      return res.status(401).json({ message: "Incorrect password" });
+    }
+    // Sign token with additional user details if needed.
+    const token = jwt.sign(
+      { id: user._id, role: user.role, email: user.email, firstName: user.firstName, lastName: user.lastName },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+    console.log(`${user.role} signed in successfully`);
+    res.json({ message: `${user.role} signed in successfully`, status: true, user, token });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
-
 // Verify the provided JWT token.
 const verifyToken = (req, res) => {
   const { token } = req.body;
-  jwt.verify(token, SECRET, (err, decoded) => {
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
       console.error('Token verification failed:', err);
       return res.status(401).json({ message: "Invalid token" });
@@ -137,7 +131,7 @@ const sendOTPToEmail = (email, otp) => {
       if (error) {
         reject(error);
       } else {
-        resolve();
+        resolve(info);
       }
     });
   });
@@ -156,7 +150,8 @@ const forgotPassword = async (req, res) => {
     );
     if (user) {
       await sendOTPToEmail(email, otp);
-      res.status(200).json({ message: 'OTP sent to email', status: true, otp });
+      // Do not return the OTP in the response
+      res.status(200).json({ message: 'OTP sent to email', status: true });
     } else {
       res.status(404).json({ message: "User not found" });
     }
@@ -202,7 +197,6 @@ const createNewPassword = async (req, res) => {
 };
 
 /* --------------------- Admin-Control Functions --------------------- */
-// These endpoints are intended to be used by admins to manage regular users.
 
 // Delete a user by their ID.
 const deleteUser = async (req, res) => {
