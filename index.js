@@ -5,7 +5,9 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 const jwt = require('jsonwebtoken');
 
-const userRoutes = require('./routes/user.routes');
+const userRoutes = require('./routes/user.routes'); 
+const adminRoutes = require('./routes/admin.routes');
+const cartRoutes = require('./routes/cart.routes'); 
 
 const app = express();
 
@@ -22,7 +24,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 // Mount the unified routes under /api
-app.use('/api', userRoutes);
+app.use('/api', userRoutes);  
+app.use('/api/admin', adminRoutes); 
+app.use('/api/cart', cartRoutes); 
 
 // A sample route to verify the token and fetch user details
 app.get('/api/user', (req, res) => {

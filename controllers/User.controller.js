@@ -1,4 +1,3 @@
-// controllers/user.controller.js
 const User = require('../models/User');
 const bcrypt = require("bcryptjs");
 const nodemailer = require('nodemailer');
@@ -50,12 +49,15 @@ const sendUniqueNumberToEmail = (email, adminId) => {
 const registerUser = async (req, res) => {
   try {
     const { firstName, lastName, email, password, role } = req.body;
-    const newUser = new User({ firstName, lastName, email, password, role });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = new User({ firstName, lastName, email, password: hashedPassword, role });
+    
     if (role === 'admin') {
       const adminId = generateUniqueNumber();
       newUser.adminId = adminId;
       await sendUniqueNumberToEmail(email, adminId);
     }
+    
     await newUser.save();
     res.status(201).json({ message: `${role} registered successfully`, status: 200 });
   } catch (error) {
@@ -70,21 +72,20 @@ const loginUser = async (req, res) => {
   try {
     const user = await User.findOne({ email });
     if (!user) {
-      console.log("User not found");
       return res.status(404).json({ message: "User not found" });
     }
+
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
-      console.log("Incorrect password");
       return res.status(401).json({ message: "Incorrect password" });
     }
-    // Sign token with additional user details if needed.
+
     const token = jwt.sign(
       { id: user._id, role: user.role, email: user.email, firstName: user.firstName, lastName: user.lastName },
       JWT_SECRET,
       { expiresIn: '1h' }
     );
-    console.log(`${user.role} signed in successfully`);
+
     res.json({ message: `${user.role} signed in successfully`, status: true, user, token });
   } catch (error) {
     console.error("Login error:", error);
@@ -97,7 +98,6 @@ const verifyToken = (req, res) => {
   const { token } = req.body;
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
-      console.error('Token verification failed:', err);
       return res.status(401).json({ message: "Invalid token" });
     }
     res.json({ message: "Token verified successfully", status: true, decoded, token });
@@ -148,9 +148,9 @@ const forgotPassword = async (req, res) => {
       { otp, otpExpiration: expirationTime },
       { new: true }
     );
+
     if (user) {
       await sendOTPToEmail(email, otp);
-      // Do not return the OTP in the response
       res.status(200).json({ message: 'OTP sent to email', status: true });
     } else {
       res.status(404).json({ message: "User not found" });
@@ -185,6 +185,7 @@ const createNewPassword = async (req, res) => {
       { password: hashedPassword },
       { new: true }
     );
+
     if (!user) {
       return res.status(404).json({ message: "User not found", status: false });
     } else {
@@ -198,13 +199,22 @@ const createNewPassword = async (req, res) => {
 
 /* --------------------- Admin-Control Functions --------------------- */
 
+// Fetch all users
+const getUsers = async (req, res) => {
+  try {
+    const users = await User.find(); // Fetch all users from the database
+    res.status(200).json(users);
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching users", error });
+  }
+};
+
 // Delete a user by their ID.
 const deleteUser = async (req, res) => {
   const { userId } = req.params;
   try {
     const deletedUser = await User.findByIdAndDelete(userId);
-    if (!deletedUser)
-      return res.status(404).json({ message: "User not found" });
+    if (!deletedUser) return res.status(404).json({ message: "User not found" });
     res.json({ message: "User deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: "Error deleting user", error });
@@ -216,8 +226,7 @@ const updateUser = async (req, res) => {
   const { userId } = req.params;
   try {
     const updatedUser = await User.findByIdAndUpdate(userId, req.body, { new: true });
-    if (!updatedUser)
-      return res.status(404).json({ message: "User not found" });
+    if (!updatedUser) return res.status(404).json({ message: "User not found" });
     res.json({ message: "User updated successfully", user: updatedUser });
   } catch (error) {
     res.status(500).json({ message: "Error updating user", error });
@@ -232,5 +241,6 @@ module.exports = {
   verifyOTP,
   createNewPassword,
   deleteUser,
-  updateUser
+  updateUser,
+  getUsers // Added here
 };
