@@ -1,27 +1,35 @@
-// controllers/cart.controller.js
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
+const mongoose = require('mongoose');
 
 // Get the current user's cart
 const getCart = async (req, res) => {
   try {
     let cart = await Cart.findOne({ user: req.user._id }).populate('items.product', 'name price imageUrl');
     if (!cart) {
-      // If the user has no cart, create one
       cart = new Cart({ user: req.user._id, items: [] });
       await cart.save();
     }
     res.status(200).json(cart);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching cart', error });
+    res.status(500).json({ message: 'Error fetching cart', error: error.message });
   }
 };
 
 // Add a product to the cart (or update quantity if already exists)
 const addToCart = async (req, res) => {
   const { productId, quantity } = req.body;
+
+  // Validate productId format
+  if (!mongoose.Types.ObjectId.isValid(productId)) {
+    return res.status(400).json({ message: 'Invalid product ID' });
+  }
+
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return res.status(400).json({ message: 'Quantity must be a positive integer' });
+  }
+
   try {
-    // Validate that product exists
     const product = await Product.findById(productId);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
@@ -30,25 +38,32 @@ const addToCart = async (req, res) => {
       cart = new Cart({ user: req.user._id, items: [] });
     }
 
-    // Check if product already exists in cart
     const itemIndex = cart.items.findIndex(item => item.product.toString() === productId);
     if (itemIndex > -1) {
-      // Update the quantity
       cart.items[itemIndex].quantity += quantity;
     } else {
-      // Add new item to cart
       cart.items.push({ product: productId, quantity });
     }
+
     await cart.save();
     res.status(200).json({ message: 'Product added to cart successfully', cart });
   } catch (error) {
-    res.status(500).json({ message: 'Error adding to cart', error });
+    res.status(500).json({ message: 'Error adding to cart', error: error.message });
   }
 };
 
 // Update a cart item's quantity
 const updateCartItem = async (req, res) => {
   const { productId, quantity } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(productId)) {
+    return res.status(400).json({ message: 'Invalid product ID' });
+  }
+
+  if (!Number.isInteger(quantity) || quantity < 0) {
+    return res.status(400).json({ message: 'Quantity must be a non-negative integer' });
+  }
+
   try {
     let cart = await Cart.findOne({ user: req.user._id });
     if (!cart) return res.status(404).json({ message: 'Cart not found' });
@@ -56,22 +71,27 @@ const updateCartItem = async (req, res) => {
     const itemIndex = cart.items.findIndex(item => item.product.toString() === productId);
     if (itemIndex === -1) return res.status(404).json({ message: 'Product not in cart' });
 
-    // If quantity is 0 or less, remove the item
-    if (quantity <= 0) {
+    if (quantity === 0) {
       cart.items.splice(itemIndex, 1);
     } else {
       cart.items[itemIndex].quantity = quantity;
     }
+
     await cart.save();
     res.status(200).json({ message: 'Cart updated successfully', cart });
   } catch (error) {
-    res.status(500).json({ message: 'Error updating cart', error });
+    res.status(500).json({ message: 'Error updating cart', error: error.message });
   }
 };
 
 // Remove an item from the cart
 const removeFromCart = async (req, res) => {
   const { productId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(productId)) {
+    return res.status(400).json({ message: 'Invalid product ID' });
+  }
+
   try {
     let cart = await Cart.findOne({ user: req.user._id });
     if (!cart) return res.status(404).json({ message: 'Cart not found' });
@@ -80,7 +100,7 @@ const removeFromCart = async (req, res) => {
     await cart.save();
     res.status(200).json({ message: 'Item removed from cart', cart });
   } catch (error) {
-    res.status(500).json({ message: 'Error removing item from cart', error });
+    res.status(500).json({ message: 'Error removing item from cart', error: error.message });
   }
 };
 

@@ -49,9 +49,8 @@ const sendUniqueNumberToEmail = (email, adminId) => {
 const registerUser = async (req, res) => {
   try {
     const { firstName, lastName, email, password, role } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({ firstName, lastName, email, password: hashedPassword, role });
-    
+    const newUser = new User({ firstName, lastName, email, password, role });
+
     if (role === 'admin') {
       const adminId = generateUniqueNumber();
       newUser.adminId = adminId;
@@ -65,6 +64,7 @@ const registerUser = async (req, res) => {
     res.status(500).json({ message: "Internal Server Error", error });
   }
 };
+
 
 // Login for both users and admins using email and password.
 const loginUser = async (req, res) => {
