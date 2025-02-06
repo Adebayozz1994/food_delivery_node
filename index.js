@@ -19,7 +19,10 @@ mongoose
   .catch((err) => console.error("Database connection error:", err));
 
 
-app.use(cors());
+  app.use(cors({
+    origin: 'http://localhost:3000', // Set this to your client's URL
+    credentials: true, // Allows cookies and other credentials to be sent
+  }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
