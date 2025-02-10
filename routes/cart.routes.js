@@ -10,7 +10,8 @@ router.use(authenticateUser);
 
 router.get('/', getCart);
 router.post('/add', addToCart);
-router.put('/update', updateCartItem); // Pass productId and new quantity in body
+router.put('/update', updateCartItem); 
 router.delete('/remove/:productId', removeFromCart);
+
 
 module.exports = router;

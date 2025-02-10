@@ -8,6 +8,8 @@ const jwt = require('jsonwebtoken');
 const userRoutes = require('./routes/user.routes'); 
 const adminRoutes = require('./routes/admin.routes');
 const cartRoutes = require('./routes/cart.routes'); 
+const orderRoutes = require('./routes/order.routes'); 
+
 
 const app = express();
 
@@ -30,6 +32,7 @@ app.use(express.json());
 app.use('/api', userRoutes);  
 app.use('/api/admin', adminRoutes); 
 app.use('/api/cart', cartRoutes); 
+app.use('/api/order', orderRoutes);
 
 // A sample route to verify the token and fetch user details
 app.get('/api/user', (req, res) => {
