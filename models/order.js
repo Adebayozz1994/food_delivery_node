@@ -17,7 +17,7 @@ const orderSchema = new mongoose.Schema(
     total: { type: Number, required: true },
     paymentMethod: { type: String, enum: ['whatsapp', 'card', 'cod'], required: true },
     // For card payments we assume immediate processing; for whatsapp and COD, status remains pending.
-    paymentStatus: { type: String, enum: ['Pending', 'Paid'], required: true, default: 'Pending' }
+    paymentStatus: { type: String, enum: ['Pending', 'Processing', 'Completed', 'Failed'], required: true, default: 'Pending' }
   },
   { timestamps: true }
 );
