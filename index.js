@@ -22,8 +22,8 @@ mongoose
 
 
   app.use(cors({
-    origin: 'http://localhost:3000', // Set this to your client's URL
-    credentials: true, // Allows cookies and other credentials to be sent
+    origin: 'http://localhost:3000', 
+    credentials: true,
   }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -33,6 +33,8 @@ app.use('/api', userRoutes);
 app.use('/api/admin', adminRoutes); 
 app.use('/api/cart', cartRoutes); 
 app.use('/api/order', orderRoutes);
+
+
 
 // A sample route to verify the token and fetch user details
 app.get('/api/user', (req, res) => {
