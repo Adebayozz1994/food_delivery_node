@@ -148,8 +148,11 @@ const getOrderByPaymentIntent = async (req, res) => {
     const { paymentIntentId } = req.params;  // Destructure to get paymentIntentId
 
     // Find the order by paymentIntentId
-    const order = await Order.findOne({ stripePaymentIntentId: paymentIntentId });
-    
+    const order = await Order.findOne({ stripePaymentIntentId: paymentIntentId })
+    .populate({
+      path: 'items.product',
+      select: 'name price description image' // Add any other product fields you need
+    });
     if (!order) {
       // Return a 404 if the order is not found
       return res.status(404).json({ message: 'Order not found' });
@@ -159,6 +162,11 @@ const getOrderByPaymentIntent = async (req, res) => {
     res.status(200).json({
       orderId: order._id,
       trackingId: order.trackingId,
+      items: order.items,
+      total: order.total,
+      paymentStatus: order.paymentStatus,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
     });
   } catch (error) {
     // Catch and return any errors
