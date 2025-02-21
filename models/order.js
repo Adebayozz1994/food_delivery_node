@@ -1,5 +1,12 @@
 const mongoose = require('mongoose');
 
+const addressSchema = new mongoose.Schema({
+  street: { type: String, required: true },
+  city: { type: String, required: true },
+  state: { type: String, required: true },
+  phoneNumber: { type: String, required: true }
+});
+
 const orderItemSchema = new mongoose.Schema(
   {
     product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
@@ -16,13 +23,16 @@ const orderSchema = new mongoose.Schema(
     total: { type: Number, required: true },
     paymentMethod: { type: String, enum: ['whatsapp', 'card', 'cod'], required: true },
     paymentStatus: { type: String, enum: ['Pending', 'Processing', 'Completed', 'Failed'], required: true, default: 'Pending' },
-    paymentIntentId: { type: String, required: true },
-    stripePaymentIntentId: { type: String },
     orderStatus: {
       type: String,
       enum: ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],
       default: 'Pending'
     },
+    deliveryAddress: { type: addressSchema, required: function() { 
+      return this.paymentMethod === 'cod'; 
+    }},
+    paymentIntentId: { type: String, required: true },
+    stripePaymentIntentId: { type: String },
     trackingId: { type: String, required: true, unique: true }
   },
   { timestamps: true }

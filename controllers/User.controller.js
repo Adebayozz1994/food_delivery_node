@@ -236,85 +236,164 @@ const updateUser = async (req, res) => {
 /* --------------------- Order Tracking Functions --------------------- */
 
 // Get order by tracking ID
-const getOrderByTracking = async (req, res) => {
+// Get all orders
+const getAllOrders = async (req, res) => {
   try {
-    const { trackingId } = req.params;
-    
-    const order = await Order.findOne({ trackingId })
+    const orders = await Order.find()
       .populate('user', 'firstName lastName email')
-      .populate({
-        path: 'items.product',
-        select: 'name price description image'
-      });
+      .populate('items.product', 'name price image')
+      .sort({ createdAt: -1 });
 
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    res.status(200).json({ order });
+    res.status(200).json({
+      success: true,
+      data: {
+        orders,
+        count: orders.length
+      }
+    });
   } catch (error) {
-    console.error('Error fetching order:', error);
-    res.status(500).json({ message: 'Error fetching order details', error: error.message });
+    console.error('Error fetching orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching orders',
+      error: error.message
+    });
   }
 };
 
 // Update order status
 const updateOrderStatus = async (req, res) => {
   try {
-    const { trackingId } = req.params;
-    const { paymentStatus, orderStatus } = req.body;
+    const { orderId } = req.params;
+    const { orderStatus } = req.body;
 
-    // Validate status values
-    const validPaymentStatuses = ['Pending', 'Paid', 'Failed', 'Refunded'];
-    const validOrderStatuses = ['Processing', 'Shipped', 'Delivered', 'Cancelled'];
-
-    if (paymentStatus && !validPaymentStatuses.includes(paymentStatus)) {
-      return res.status(400).json({ message: 'Invalid payment status' });
+    // Validate order status
+    const validStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
+    if (!validStatuses.includes(orderStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order status'
+      });
     }
 
-    if (orderStatus && !validOrderStatuses.includes(orderStatus)) {
-      return res.status(400).json({ message: 'Invalid order status' });
-    }
-
-    const updateData = {};
-    if (paymentStatus) updateData.paymentStatus = paymentStatus;
-    if (orderStatus) updateData.orderStatus = orderStatus;
-
-    const order = await Order.findOneAndUpdate(
-      { trackingId },
-      updateData,
+    const order = await Order.findByIdAndUpdate(
+      orderId,
+      { 
+        orderStatus,
+        updatedAt: new Date()
+      },
       { new: true }
-    ).populate('user', 'email');
+    ).populate('user', 'firstName lastName email')
+     .populate('items.product', 'name price image');
 
     if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
     }
 
-    // Send email notification
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
+    res.status(200).json({
+      success: true,
+      data: {
+        order
       }
     });
-
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: order.user.email,
-      subject: 'Order Status Update',
-      text: `Your order (Tracking ID: ${trackingId}) has been updated:\n
-             ${paymentStatus ? `Payment Status: ${paymentStatus}\n` : ''}
-             ${orderStatus ? `Order Status: ${orderStatus}` : ''}`
+  } catch (error) {
+    console.error('Error updating order status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating order status',
+      error: error.message
     });
+  }
+};
+
+// Get order by tracking ID
+const getOrderByTracking = async (req, res) => {
+  try {
+    const { trackingId } = req.params;
+    
+    const order = await Order.findOne({ trackingId })
+      .populate('user', 'firstName lastName email')
+      .populate('items.product', 'name price image');
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
 
     res.status(200).json({
-      message: 'Order updated successfully',
-      order
+      success: true,
+      data: {
+        order
+      }
     });
   } catch (error) {
-    console.error('Error updating order:', error);
-    res.status(500).json({ message: 'Error updating order status', error: error.message });
+    console.error('Error fetching order:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching order',
+      error: error.message
+    });
+  }
+};
+
+// Get order statistics
+const getOrderStats = async (req, res) => {
+  try {
+    const totalOrders = await Order.countDocuments();
+    const totalRevenue = await Order.aggregate([
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$total" }
+        }
+      }
+    ]);
+
+    const ordersByStatus = await Order.aggregate([
+      {
+        $group: {
+          _id: "$orderStatus",
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const ordersByPaymentMethod = await Order.aggregate([
+      {
+        $group: {
+          _id: "$paymentMethod",
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalOrders,
+        totalRevenue: totalRevenue[0]?.total || 0,
+        ordersByStatus: ordersByStatus.reduce((acc, curr) => {
+          acc[curr._id] = curr.count;
+          return acc;
+        }, {}),
+        ordersByPaymentMethod: ordersByPaymentMethod.reduce((acc, curr) => {
+          acc[curr._id] = curr.count;
+          return acc;
+        }, {})
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching order stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching order statistics',
+      error: error.message
+    });
   }
 };
 
@@ -328,6 +407,8 @@ module.exports = {
   deleteUser,
   updateUser,
   getUsers,
-  getOrderByTracking,
-  updateOrderStatus
+  getAllOrders,         // Add this
+  updateOrderStatus,    // Add this
+  getOrderByTracking,   // Add this
+  getOrderStats 
 };

@@ -28,7 +28,7 @@ mongoose
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Mount the unified routes under /api
+
 app.use('/api', userRoutes);  
 app.use('/api/admin', adminRoutes); 
 app.use('/api/cart', cartRoutes); 

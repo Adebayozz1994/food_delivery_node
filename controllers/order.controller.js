@@ -5,19 +5,30 @@ const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 
 const checkoutCart = async (req, res) => {
-  const { paymentMethod } = req.body;
+  const { paymentMethod, deliveryAddress } = req.body;
 
-  // Validate the payment method
+  // Validate payment method
   if (!['whatsapp', 'card', 'cod'].includes(paymentMethod)) {
     return res.status(400).json({ message: 'Invalid payment method' });
   }
 
+  // Validate delivery address for COD
+  if (paymentMethod === 'cod') {
+    if (!deliveryAddress || !deliveryAddress.street || !deliveryAddress.city || 
+        !deliveryAddress.state || !deliveryAddress.phoneNumber) {
+      return res.status(400).json({ 
+        message: 'Delivery address is required for Cash on Delivery orders' 
+      });
+    }
+  }
+
   try {
-    // Fetch the user's cart and populate product details
-    const cart = await Cart.findOne({ user: req.user._id }).populate({
-      path: 'items.product',
-      select: 'name price description'
-    });
+    // Fetch the user's cart with populated product details
+    const cart = await Cart.findOne({ user: req.user._id })
+      .populate({
+        path: 'items.product',
+        select: 'name price description'
+      });
 
     if (!cart || cart.items.length === 0) {
       return res.status(400).json({ message: 'Cart is empty' });
@@ -34,27 +45,23 @@ const checkoutCart = async (req, res) => {
       };
     });
 
-    // Save the original cart items for email and WhatsApp before clearing the cart
-    const emailItems = cart.items.map(item => ({
-      product: item.product,
-      quantity: item.quantity
-    }));
+    // Generate tracking ID
+    const trackingId = crypto.randomBytes(6).toString('hex').toUpperCase();
 
     // Initialize payment variables
     let clientSecret = null;
     let paymentIntent = null;
 
+    // Handle different payment methods
     if (paymentMethod === 'card') {
+      // Create Stripe payment intent for card payments
       paymentIntent = await stripe.paymentIntents.create({
-        amount: total * 100,
+        amount: Math.round(total * 100),
         currency: 'usd',
         payment_method_types: ['card'],
       });
       clientSecret = paymentIntent.client_secret;
     }
-
-    // Generate a unique tracking ID
-    const trackingId = crypto.randomBytes(6).toString('hex').toUpperCase();
 
     // Prepare new order data
     const newOrderData = {
@@ -62,34 +69,58 @@ const checkoutCart = async (req, res) => {
       items: orderItems,
       total,
       paymentMethod,
-      // If card, set the payment intent ID; for other methods, you can use a placeholder
-      paymentIntentId: paymentMethod === 'card' && paymentIntent ? paymentIntent.id : 'N/A',
-      // For card payments, status remains pending; for others, assume paid
-      paymentStatus: paymentMethod === 'card' ? 'Pending' : 'Paid',
+      paymentStatus: paymentMethod === 'card' ? 'Pending' : 'Completed',
+      orderStatus: paymentMethod === 'card' ? 'Pending' : 'Processing',
+      paymentIntentId: paymentMethod === 'card' ? paymentIntent.id : 'N/A',
+      stripePaymentIntentId: paymentMethod === 'card' ? paymentIntent.id : null,
       trackingId,
-      stripePaymentIntentId: paymentMethod === 'card' && paymentIntent ? paymentIntent.id : null,
+      ...(paymentMethod === 'cod' && { deliveryAddress }),
     };
 
     // Create and save the order
     const newOrder = new Order(newOrderData);
     await newOrder.save();
 
-    // Clear the cart after saving the order
-    cart.items = [];
-    await cart.save();
-
-    // If payment method is WhatsApp, build the message using emailItems
+    // Prepare WhatsApp message if payment method is WhatsApp
     let whatsappLink = null;
     if (paymentMethod === 'whatsapp') {
-      let message = `Hello, I would like to place an order:\n`;
-      emailItems.forEach(item => {
-        message += `Product: ${item.product.name}, Quantity: ${item.quantity}\n`;
+      // Store items before clearing cart
+      const orderItemsDetails = cart.items.map(item => ({
+        name: item.product.name,
+        quantity: item.quantity,
+        price: item.product.price
+      }));
+
+      let message = `*New Order Request*\n\n`;
+      message += `Order ID: ${newOrder._id}\n`;
+      message += `Tracking ID: ${trackingId}\n\n`;
+      message += `*Order Items:*\n`;
+      
+      orderItemsDetails.forEach(item => {
+        message += `- ${item.name} x${item.quantity} ($${item.price.toFixed(2)})\n`;
       });
-      message += `Total: $${total}\nTracking ID: ${trackingId}`;
+      
+      message += `\n*Total Amount:* $${total.toFixed(2)}\n\n`;
+      message += `Customer: ${req.user.firstName} ${req.user.lastName}\n`;
+      message += `Email: ${req.user.email}\n`;
+      message += `Payment Method: WhatsApp Pay`;
+
+      // Create WhatsApp link with pre-filled message
       whatsappLink = `https://wa.me/2348166223968?text=${encodeURIComponent(message)}`;
     }
 
-    // Configure email transporter for sending confirmation email
+    // Store items before clearing cart
+    const orderItemsForEmail = cart.items.map(item => ({
+      name: item.product.name,
+      quantity: item.quantity,
+      price: item.product.price
+    }));
+
+    // Clear the cart
+    cart.items = [];
+    await cart.save();
+
+    // Configure email transporter
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -97,14 +128,6 @@ const checkoutCart = async (req, res) => {
         pass: process.env.EMAIL_PASS,
       },
     });
-
-    // Create the order items list for the email using emailItems
-    const orderItemsList = emailItems.map(item => `
-      Product: ${item.product.name}
-      Quantity: ${item.quantity}
-      Price: $${item.product.price.toFixed(2)}
-      Subtotal: $${(item.product.price * item.quantity).toFixed(2)}
-    `).join('\n');
 
     // Prepare email content
     const mailOptions = {
@@ -118,24 +141,53 @@ Order Details:
 --------------
 Order ID: ${newOrder._id}
 Tracking ID: ${trackingId}
-Payment Method: ${paymentMethod}
+Payment Method: ${paymentMethod.toUpperCase()}
+
+${paymentMethod === 'cod' ? `
+Delivery Address:
+----------------
+Street: ${deliveryAddress.street}
+City: ${deliveryAddress.city}
+State: ${deliveryAddress.state}
+Phone: ${deliveryAddress.phoneNumber}
+` : ''}
 
 Items:
 ------
-${orderItemsList}
+${orderItemsForEmail.map(item => `
+Product: ${item.name}
+Quantity: ${item.quantity}
+Price: $${item.price.toFixed(2)}
+Subtotal: $${(item.price * item.quantity).toFixed(2)}
+`).join('\n')}
 
 Total Amount: $${total.toFixed(2)}
 
 Track your order using the tracking ID: ${trackingId}
 
+${paymentMethod === 'cod' ? '\nNote: Please prepare exact change for the delivery person.' : ''}
+${paymentMethod === 'whatsapp' ? '\nNote: Please complete your payment through WhatsApp to process your order.' : ''}
+
 Thank you for shopping with us!
       `,
       html: `
         <h2>Thank you for your order!</h2>
+        
         <h3>Order Details:</h3>
         <p><strong>Order ID:</strong> ${newOrder._id}</p>
         <p><strong>Tracking ID:</strong> ${trackingId}</p>
-        <p><strong>Payment Method:</strong> ${paymentMethod}</p>
+        <p><strong>Payment Method:</strong> ${paymentMethod.toUpperCase()}</p>
+
+        ${paymentMethod === 'cod' ? `
+        <h3>Delivery Address:</h3>
+        <p>
+          <strong>Street:</strong> ${deliveryAddress.street}<br>
+          <strong>City:</strong> ${deliveryAddress.city}<br>
+          <strong>State:</strong> ${deliveryAddress.state}<br>
+          <strong>Phone:</strong> ${deliveryAddress.phoneNumber}
+        </p>
+        ` : ''}
+        
         <h3>Items:</h3>
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
           <thead>
@@ -147,12 +199,12 @@ Thank you for shopping with us!
             </tr>
           </thead>
           <tbody>
-            ${emailItems.map(item => `
+            ${orderItemsForEmail.map(item => `
               <tr>
-                <td style="padding: 10px; border: 1px solid #dee2e6;">${item.product.name}</td>
+                <td style="padding: 10px; border: 1px solid #dee2e6;">${item.name}</td>
                 <td style="padding: 10px; border: 1px solid #dee2e6; text-align: center;">${item.quantity}</td>
-                <td style="padding: 10px; border: 1px solid #dee2e6; text-align: right;">$${item.product.price.toFixed(2)}</td>
-                <td style="padding: 10px; border: 1px solid #dee2e6; text-align: right;">$${(item.product.price * item.quantity).toFixed(2)}</td>
+                <td style="padding: 10px; border: 1px solid #dee2e6; text-align: right;">$${item.price.toFixed(2)}</td>
+                <td style="padding: 10px; border: 1px solid #dee2e6; text-align: right;">$${(item.price * item.quantity).toFixed(2)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -163,23 +215,42 @@ Thank you for shopping with us!
             </tr>
           </tfoot>
         </table>
+        
+        ${paymentMethod === 'whatsapp' ? `
+          <p>
+            <a href="${whatsappLink}" 
+               style="background-color: #25D366; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+              Complete Payment via WhatsApp
+            </a>
+          </p>
+        ` : ''}
+        
         <p>Track your order using the tracking ID: <strong>${trackingId}</strong></p>
+        
+        ${paymentMethod === 'cod' ? '<p><strong>Note:</strong> Please prepare exact change for the delivery person.</p>' : ''}
+        ${paymentMethod === 'whatsapp' ? '<p><strong>Note:</strong> Please complete your payment through WhatsApp to process your order.</p>' : ''}
+        
         <p>Thank you for shopping with us!</p>
       `
     };
 
+    // Add debug logging
+    console.log('Order Items:', orderItemsForEmail);
+
     // Send the confirmation email
     await transporter.sendMail(mailOptions);
 
-    // Respond with order details and payment info
+    // Send response based on payment method
     res.status(200).json({
-      message: 'Payment successful',
+      message: 'Order placed successfully',
       orderId: newOrder._id,
       trackingId,
       paymentIntentId: paymentIntent ? paymentIntent.id : null,
       clientSecret,
       whatsappLink,
+      paymentMethod,
     });
+
   } catch (error) {
     console.error('Checkout error:', error);
     return res.status(500).json({ message: 'Error during checkout', error: error.message });
