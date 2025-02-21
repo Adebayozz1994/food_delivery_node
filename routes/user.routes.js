@@ -1,4 +1,3 @@
-// routes/user.routes.js
 const express = require('express');
 const router = express.Router();
 
@@ -11,7 +10,10 @@ const {
   createNewPassword,
   deleteUser,
   updateUser,
-} = require('../controllers/user.controller');
+  getUsers,
+  getOrderByTracking,
+  updateOrderStatus
+} = require('../controllers/User.controller');
 
 const { getProducts } = require('../controllers/product.controller');
 
@@ -23,7 +25,7 @@ const { authenticateUser, isAdmin } = require('../middlewares/authMiddleware');
 // -----------------------------
 router.post('/register', registerUser);
 router.post('/login', loginUser);
-router.post('/verifyToken', verifyToken);
+router.post('/verify-token', verifyToken);
 router.post('/forgot-password', forgotPassword);
 router.post('/verify-otp', verifyOTP);
 router.post('/create-new-password', createNewPassword);
@@ -33,6 +35,13 @@ router.post('/create-new-password', createNewPassword);
 // -----------------------------
 router.delete('/admin/users/:userId', authenticateUser, isAdmin, deleteUser);
 router.put('/admin/users/:userId', authenticateUser, isAdmin, updateUser);
+router.get('/admin/users', authenticateUser, isAdmin, getUsers);
+
+// -----------------------------
+// Admin Order Management Routes (Admin Only)
+// -----------------------------
+router.get('/admin/orders/:trackingId', authenticateUser, isAdmin, getOrderByTracking);
+router.patch('/admin/orders/:trackingId/status', authenticateUser, isAdmin, updateOrderStatus);
 
 // -----------------------------
 // Public Product Route

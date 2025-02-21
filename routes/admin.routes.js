@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const Order = require('../models/order');
 
 const { authenticateUser, isAdmin } = require('../middlewares/authMiddleware'); 
 const {
@@ -9,7 +10,31 @@ const {
   deleteProduct
 } = require('../controllers/product.controller');
 
-const { getUsers, updateUser, deleteUser } = require('../controllers/user.controller');
+const { getUsers, updateUser, deleteUser } = require('../controllers/User.controller');
+
+router.patch('/orders/:trackingId/status', authenticateUser, isAdmin, async (req, res) => {
+  try {
+    const { trackingId } = req.params;
+    const { orderStatus } = req.body;
+
+    const order = await Order.findOne({ trackingId });
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    order.orderStatus = orderStatus;
+    await order.save();
+
+    // Optionally send email notification to customer
+    // await sendOrderStatusEmail(order.user.email, order.trackingId, orderStatus);
+
+    res.json({ message: 'Order status updated successfully', order });
+  } catch (error) {
+    console.error('Error updating order status:', error);
+    res.status(500).json({ message: 'Error updating order status' });
+  }
+});
+
 
 // Apply authentication and admin middleware to all routes below
 router.use(authenticateUser, isAdmin);

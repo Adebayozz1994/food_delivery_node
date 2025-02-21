@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Order = require('../models/order');
 const bcrypt = require("bcryptjs");
 const nodemailer = require('nodemailer');
 require("dotenv").config();
@@ -65,8 +66,7 @@ const registerUser = async (req, res) => {
   }
 };
 
-
-// Login for both users and admins using email and password.
+// Login for both users and admins
 const loginUser = async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -93,7 +93,7 @@ const loginUser = async (req, res) => {
   }
 };
 
-// Verify the provided JWT token.
+// Verify Token
 const verifyToken = (req, res) => {
   const { token } = req.body;
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
@@ -104,12 +104,12 @@ const verifyToken = (req, res) => {
   });
 };
 
-// Generate a 6-digit OTP.
+// Generate OTP
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-// Send OTP to email (for forgotten password)
+// Send OTP to email
 const sendOTPToEmail = (email, otp) => {
   return new Promise((resolve, reject) => {
     const transporter = nodemailer.createTransport({
@@ -137,7 +137,7 @@ const sendOTPToEmail = (email, otp) => {
   });
 };
 
-// Forgot password: update the user document with an OTP and send it by email.
+// Forgot Password
 const forgotPassword = async (req, res) => {
   const { email } = req.body;
   const otp = generateOTP();
@@ -160,7 +160,7 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-// Verify OTP provided by the user.
+// Verify OTP
 const verifyOTP = async (req, res) => {
   const { email, otp } = req.body;
   try {
@@ -175,7 +175,7 @@ const verifyOTP = async (req, res) => {
   }
 };
 
-// Update the user's password (after OTP verification).
+// Create New Password
 const createNewPassword = async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -202,14 +202,14 @@ const createNewPassword = async (req, res) => {
 // Fetch all users
 const getUsers = async (req, res) => {
   try {
-    const users = await User.find(); // Fetch all users from the database
+    const users = await User.find();
     res.status(200).json(users);
   } catch (error) {
     res.status(500).json({ message: "Error fetching users", error });
   }
 };
 
-// Delete a user by their ID.
+// Delete user
 const deleteUser = async (req, res) => {
   const { userId } = req.params;
   try {
@@ -221,7 +221,7 @@ const deleteUser = async (req, res) => {
   }
 };
 
-// Update a user by their ID.
+// Update user
 const updateUser = async (req, res) => {
   const { userId } = req.params;
   try {
@@ -230,6 +230,91 @@ const updateUser = async (req, res) => {
     res.json({ message: "User updated successfully", user: updatedUser });
   } catch (error) {
     res.status(500).json({ message: "Error updating user", error });
+  }
+};
+
+/* --------------------- Order Tracking Functions --------------------- */
+
+// Get order by tracking ID
+const getOrderByTracking = async (req, res) => {
+  try {
+    const { trackingId } = req.params;
+    
+    const order = await Order.findOne({ trackingId })
+      .populate('user', 'firstName lastName email')
+      .populate({
+        path: 'items.product',
+        select: 'name price description image'
+      });
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    res.status(200).json({ order });
+  } catch (error) {
+    console.error('Error fetching order:', error);
+    res.status(500).json({ message: 'Error fetching order details', error: error.message });
+  }
+};
+
+// Update order status
+const updateOrderStatus = async (req, res) => {
+  try {
+    const { trackingId } = req.params;
+    const { paymentStatus, orderStatus } = req.body;
+
+    // Validate status values
+    const validPaymentStatuses = ['Pending', 'Paid', 'Failed', 'Refunded'];
+    const validOrderStatuses = ['Processing', 'Shipped', 'Delivered', 'Cancelled'];
+
+    if (paymentStatus && !validPaymentStatuses.includes(paymentStatus)) {
+      return res.status(400).json({ message: 'Invalid payment status' });
+    }
+
+    if (orderStatus && !validOrderStatuses.includes(orderStatus)) {
+      return res.status(400).json({ message: 'Invalid order status' });
+    }
+
+    const updateData = {};
+    if (paymentStatus) updateData.paymentStatus = paymentStatus;
+    if (orderStatus) updateData.orderStatus = orderStatus;
+
+    const order = await Order.findOneAndUpdate(
+      { trackingId },
+      updateData,
+      { new: true }
+    ).populate('user', 'email');
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    // Send email notification
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: order.user.email,
+      subject: 'Order Status Update',
+      text: `Your order (Tracking ID: ${trackingId}) has been updated:\n
+             ${paymentStatus ? `Payment Status: ${paymentStatus}\n` : ''}
+             ${orderStatus ? `Order Status: ${orderStatus}` : ''}`
+    });
+
+    res.status(200).json({
+      message: 'Order updated successfully',
+      order
+    });
+  } catch (error) {
+    console.error('Error updating order:', error);
+    res.status(500).json({ message: 'Error updating order status', error: error.message });
   }
 };
 
@@ -242,5 +327,7 @@ module.exports = {
   createNewPassword,
   deleteUser,
   updateUser,
-  getUsers // Added here
+  getUsers,
+  getOrderByTracking,
+  updateOrderStatus
 };
