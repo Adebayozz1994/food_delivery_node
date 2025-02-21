@@ -11,12 +11,16 @@ const {
   deleteUser,
   updateUser,
   getUsers,
+  getUserProfile,
+  updateProfile,
+  getUserOrders,
 } = require('../controllers/User.controller');
 
 const { getProducts } = require('../controllers/product.controller');
 
 // Middlewares
 const { authenticateUser, isAdmin } = require('../middlewares/authMiddleware');
+
 
 // -----------------------------
 // Auth Routes (Public)
@@ -35,6 +39,10 @@ router.delete('/admin/users/:userId', authenticateUser, isAdmin, deleteUser);
 router.put('/admin/users/:userId', authenticateUser, isAdmin, updateUser);
 router.get('/admin/users', authenticateUser, isAdmin, getUsers);
 
+// Protected routes (require authentication)
+router.get('/profile', authenticateUser, getUserProfile);
+router.put('/update-profile', authenticateUser, updateProfile);
+router.get('/orders', authenticateUser, getUserOrders);
 
 router.get('/products', getProducts);
 

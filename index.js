@@ -30,6 +30,7 @@ app.use(express.json());
 
 
 app.use('/api', userRoutes);  
+app.use('/api/user', userRoutes); 
 app.use('/api/admin', adminRoutes); 
 app.use('/api/cart', cartRoutes); 
 app.use('/api/order', orderRoutes);

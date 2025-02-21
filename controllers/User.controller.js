@@ -44,71 +44,6 @@ const sendUniqueNumberToEmail = (email, adminId) => {
   });
 };
 
-// Email configuration
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
-
-// Helper function to send order status email
-const sendOrderStatusEmail = async (email, orderStatus, trackingId, items) => {
-  // Create a formatted items list for the email
-  const itemsList = items.map(item => 
-    `${item.product.name} x ${item.quantity} - $${(item.product.price * item.quantity).toFixed(2)}`
-  ).join('\n');
-
-  const statusMessages = {
-    'Processing': 'Your order is now being processed.',
-    'Shipped': 'Great news! Your order has been shipped.',
-    'Delivered': 'Your order has been delivered successfully.',
-    'Cancelled': 'Your order has been cancelled.'
-  };
-
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: `Order Status Update - ${orderStatus}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #333;">Order Status Update</h2>
-        <p style="color: #666;">Hello,</p>
-        <p style="color: #666;">${statusMessages[orderStatus] || `Your order status has been updated to ${orderStatus}`}</p>
-        
-        <div style="background-color: #f8f9fa; padding: 15px; margin: 20px 0; border-radius: 5px;">
-          <p style="margin: 5px 0;"><strong>Order Status:</strong> ${orderStatus}</p>
-          <p style="margin: 5px 0;"><strong>Tracking ID:</strong> ${trackingId}</p>
-        </div>
-
-        <div style="margin: 20px 0;">
-          <h3 style="color: #333;">Order Items:</h3>
-          <pre style="background-color: #f8f9fa; padding: 15px; border-radius: 5px;">${itemsList}</pre>
-        </div>
-
-        <p style="color: #666;">You can track your order using the tracking ID above.</p>
-        
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #888; font-size: 12px;">
-          <p>This is an automated message, please do not reply to this email.</p>
-        </div>
-      </div>
-    `
-  };
-
-  return new Promise((resolve, reject) => {
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.error('Email error:', error);
-        reject(error);
-      } else {
-        console.log('Email sent:', info.response);
-        resolve(info);
-      }
-    });
-  });
-};
-
 /* --------------------- Endpoints --------------------- */
 
 // Register (for both users and admins)
@@ -326,13 +261,13 @@ const getAllOrders = async (req, res) => {
   }
 };
 
-// Update order status and payment status with email notification
+// Update order and payment status
 const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
     const { orderStatus, paymentStatus } = req.body;
 
-    // Validate order status
+    // Validate order status if provided
     const validOrderStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
     if (orderStatus && !validOrderStatuses.includes(orderStatus)) {
       return res.status(400).json({
@@ -341,7 +276,7 @@ const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // Validate payment status
+    // Validate payment status if provided
     const validPaymentStatuses = ['Pending', 'Paid', 'Failed', 'Refunded'];
     if (paymentStatus && !validPaymentStatuses.includes(paymentStatus)) {
       return res.status(400).json({
@@ -351,19 +286,17 @@ const updateOrderStatus = async (req, res) => {
     }
 
     // Build update object
-    const updateData = {
-      updatedAt: new Date()
-    };
+    const updateData = {};
     if (orderStatus) updateData.orderStatus = orderStatus;
     if (paymentStatus) updateData.paymentStatus = paymentStatus;
+    updateData.updatedAt = new Date();
 
+    // Find and update the order
     const order = await Order.findByIdAndUpdate(
       orderId,
       updateData,
       { new: true }
-    )
-    .populate('user', 'firstName lastName email')
-    .populate('items.product', 'name price image');
+    ).populate('user', 'email firstName lastName');
 
     if (!order) {
       return res.status(404).json({
@@ -373,73 +306,44 @@ const updateOrderStatus = async (req, res) => {
     }
 
     // Send email notification
-    try {
-      // Customize email based on what was updated
-      let emailSubject = '';
-      let statusMessage = '';
-
-      if (orderStatus && paymentStatus) {
-        emailSubject = `Order and Payment Status Update`;
-        statusMessage = `Your order status has been updated to ${orderStatus} and payment status to ${paymentStatus}`;
-      } else if (orderStatus) {
-        emailSubject = `Order Status Update - ${orderStatus}`;
-        statusMessage = getOrderStatusMessage(orderStatus);
-      } else if (paymentStatus) {
-        emailSubject = `Payment Status Update - ${paymentStatus}`;
-        statusMessage = getPaymentStatusMessage(paymentStatus);
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
       }
+    });
 
-      const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to: order.user.email,
-        subject: emailSubject,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #333;">Status Update</h2>
-            <p style="color: #666;">Hello ${order.user.firstName},</p>
-            <p style="color: #666;">${statusMessage}</p>
-            
-            <div style="background-color: #f8f9fa; padding: 15px; margin: 20px 0; border-radius: 5px;">
-              ${orderStatus ? `<p style="margin: 5px 0;"><strong>Order Status:</strong> ${orderStatus}</p>` : ''}
-              ${paymentStatus ? `<p style="margin: 5px 0;"><strong>Payment Status:</strong> ${paymentStatus}</p>` : ''}
-              <p style="margin: 5px 0;"><strong>Tracking ID:</strong> ${order.trackingId}</p>
-              <p style="margin: 5px 0;"><strong>Order Total:</strong> $${order.total.toFixed(2)}</p>
-            </div>
-
-            <div style="margin: 20px 0;">
-              <h3 style="color: #333;">Order Items:</h3>
-              <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px;">
-                ${order.items.map(item => `
-                  <div style="margin-bottom: 10px;">
-                    <span>${item.product.name} x ${item.quantity}</span>
-                    <span style="float: right;">$${(item.product.price * item.quantity).toFixed(2)}</span>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-
-            <p style="color: #666;">You can track your order using the tracking ID above.</p>
-            
-            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #888; font-size: 12px;">
-              <p>This is an automated message, please do not reply to this email.</p>
-            </div>
-          </div>
-        `
-      };
-
-      await transporter.sendMail(mailOptions);
-
-    } catch (emailError) {
-      console.error('Failed to send email notification:', emailError);
-      // Continue with the response even if email fails
+    // Prepare status message
+    let statusMessage = '';
+    if (orderStatus) {
+      statusMessage += `Order Status: ${orderStatus}\n`;
+    }
+    if (paymentStatus) {
+      statusMessage += `Payment Status: ${paymentStatus}\n`;
     }
 
-    res.status(200).json({
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: order.user.email,
+      subject: 'Order Status Update',
+      html: `
+        <h2>Order Status Update</h2>
+        <p>Dear ${order.user.firstName} ${order.user.lastName},</p>
+        <p>Your order (ID: ${order._id}) has been updated:</p>
+        ${orderStatus ? `<p><strong>Order Status:</strong> ${orderStatus}</p>` : ''}
+        ${paymentStatus ? `<p><strong>Payment Status:</strong> ${paymentStatus}</p>` : ''}
+        <p>Tracking ID: ${order.trackingId}</p>
+        <p>Thank you for shopping with us!</p>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({
       success: true,
-      data: {
-        order
-      },
-      message: 'Order updated and notification sent'
+      message: 'Order updated successfully',
+      data: { order }
     });
 
   } catch (error) {
@@ -450,28 +354,6 @@ const updateOrderStatus = async (req, res) => {
       error: error.message
     });
   }
-};
-
-// Helper functions for status messages
-const getOrderStatusMessage = (status) => {
-  const messages = {
-    'Processing': 'Your order is now being processed.',
-    'Shipped': 'Great news! Your order has been shipped.',
-    'Delivered': 'Your order has been delivered successfully.',
-    'Cancelled': 'Your order has been cancelled.',
-    'Pending': 'Your order is pending processing.'
-  };
-  return messages[status] || `Your order status has been updated to ${status}`;
-};
-
-const getPaymentStatusMessage = (status) => {
-  const messages = {
-    'Paid': 'Your payment has been successfully processed.',
-    'Pending': 'Your payment is pending confirmation.',
-    'Failed': 'Your payment has failed. Please contact support.',
-    'Refunded': 'Your payment has been refunded.'
-  };
-  return messages[status] || `Your payment status has been updated to ${status}`;
 };
 
 // Get order by tracking ID
@@ -562,6 +444,115 @@ const getOrderStats = async (req, res) => {
   }
 };
 
+// Get user orders
+const getUserOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({ user: req.user.id })
+      .populate('items.product', 'name price image')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: { orders }
+    });
+  } catch (error) {
+    console.error('Error fetching orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching orders'
+    });
+  }
+};
+
+// Get user profile
+const getUserProfile = async (req, res) => {
+  try {
+    // Find user by ID and exclude password from the response
+    const user = await User.findById(req.user._id).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        user: {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user profile',
+      error: error.message
+    });
+  }
+};
+
+// Update user profile
+const updateProfile = async (req, res) => {
+  try {
+    const { firstName, lastName } = req.body;
+
+    // Validate input
+    if (!firstName || !lastName) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name and last name are required'
+      });
+    }
+
+    // Find and update user
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        firstName,
+        lastName,
+        updatedAt: Date.now()
+      },
+      { new: true }
+    ).select('-password');
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: {
+        user: {
+          _id: updatedUser._id,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          email: updatedUser.email,
+          role: updatedUser.role
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating user profile',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -572,8 +563,11 @@ module.exports = {
   deleteUser,
   updateUser,
   getUsers,
-  getAllOrders,         // Add this
-  updateOrderStatus,    // Add this
-  getOrderByTracking,   // Add this
-  getOrderStats 
+  getAllOrders,
+  updateOrderStatus,
+  getOrderByTracking,
+  getOrderStats,
+  getUserOrders,
+  getUserProfile,
+  updateProfile
 };
