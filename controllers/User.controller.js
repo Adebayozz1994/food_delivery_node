@@ -44,6 +44,71 @@ const sendUniqueNumberToEmail = (email, adminId) => {
   });
 };
 
+// Email configuration
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+// Helper function to send order status email
+const sendOrderStatusEmail = async (email, orderStatus, trackingId, items) => {
+  // Create a formatted items list for the email
+  const itemsList = items.map(item => 
+    `${item.product.name} x ${item.quantity} - $${(item.product.price * item.quantity).toFixed(2)}`
+  ).join('\n');
+
+  const statusMessages = {
+    'Processing': 'Your order is now being processed.',
+    'Shipped': 'Great news! Your order has been shipped.',
+    'Delivered': 'Your order has been delivered successfully.',
+    'Cancelled': 'Your order has been cancelled.'
+  };
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: `Order Status Update - ${orderStatus}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Order Status Update</h2>
+        <p style="color: #666;">Hello,</p>
+        <p style="color: #666;">${statusMessages[orderStatus] || `Your order status has been updated to ${orderStatus}`}</p>
+        
+        <div style="background-color: #f8f9fa; padding: 15px; margin: 20px 0; border-radius: 5px;">
+          <p style="margin: 5px 0;"><strong>Order Status:</strong> ${orderStatus}</p>
+          <p style="margin: 5px 0;"><strong>Tracking ID:</strong> ${trackingId}</p>
+        </div>
+
+        <div style="margin: 20px 0;">
+          <h3 style="color: #333;">Order Items:</h3>
+          <pre style="background-color: #f8f9fa; padding: 15px; border-radius: 5px;">${itemsList}</pre>
+        </div>
+
+        <p style="color: #666;">You can track your order using the tracking ID above.</p>
+        
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #888; font-size: 12px;">
+          <p>This is an automated message, please do not reply to this email.</p>
+        </div>
+      </div>
+    `
+  };
+
+  return new Promise((resolve, reject) => {
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error('Email error:', error);
+        reject(error);
+      } else {
+        console.log('Email sent:', info.response);
+        resolve(info);
+      }
+    });
+  });
+};
+
 /* --------------------- Endpoints --------------------- */
 
 // Register (for both users and admins)
@@ -261,30 +326,44 @@ const getAllOrders = async (req, res) => {
   }
 };
 
-// Update order status
+// Update order status and payment status with email notification
 const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { orderStatus } = req.body;
+    const { orderStatus, paymentStatus } = req.body;
 
     // Validate order status
-    const validStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
-    if (!validStatuses.includes(orderStatus)) {
+    const validOrderStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
+    if (orderStatus && !validOrderStatuses.includes(orderStatus)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid order status'
       });
     }
 
+    // Validate payment status
+    const validPaymentStatuses = ['Pending', 'Paid', 'Failed', 'Refunded'];
+    if (paymentStatus && !validPaymentStatuses.includes(paymentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payment status'
+      });
+    }
+
+    // Build update object
+    const updateData = {
+      updatedAt: new Date()
+    };
+    if (orderStatus) updateData.orderStatus = orderStatus;
+    if (paymentStatus) updateData.paymentStatus = paymentStatus;
+
     const order = await Order.findByIdAndUpdate(
       orderId,
-      { 
-        orderStatus,
-        updatedAt: new Date()
-      },
+      updateData,
       { new: true }
-    ).populate('user', 'firstName lastName email')
-     .populate('items.product', 'name price image');
+    )
+    .populate('user', 'firstName lastName email')
+    .populate('items.product', 'name price image');
 
     if (!order) {
       return res.status(404).json({
@@ -293,20 +372,106 @@ const updateOrderStatus = async (req, res) => {
       });
     }
 
+    // Send email notification
+    try {
+      // Customize email based on what was updated
+      let emailSubject = '';
+      let statusMessage = '';
+
+      if (orderStatus && paymentStatus) {
+        emailSubject = `Order and Payment Status Update`;
+        statusMessage = `Your order status has been updated to ${orderStatus} and payment status to ${paymentStatus}`;
+      } else if (orderStatus) {
+        emailSubject = `Order Status Update - ${orderStatus}`;
+        statusMessage = getOrderStatusMessage(orderStatus);
+      } else if (paymentStatus) {
+        emailSubject = `Payment Status Update - ${paymentStatus}`;
+        statusMessage = getPaymentStatusMessage(paymentStatus);
+      }
+
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: order.user.email,
+        subject: emailSubject,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #333;">Status Update</h2>
+            <p style="color: #666;">Hello ${order.user.firstName},</p>
+            <p style="color: #666;">${statusMessage}</p>
+            
+            <div style="background-color: #f8f9fa; padding: 15px; margin: 20px 0; border-radius: 5px;">
+              ${orderStatus ? `<p style="margin: 5px 0;"><strong>Order Status:</strong> ${orderStatus}</p>` : ''}
+              ${paymentStatus ? `<p style="margin: 5px 0;"><strong>Payment Status:</strong> ${paymentStatus}</p>` : ''}
+              <p style="margin: 5px 0;"><strong>Tracking ID:</strong> ${order.trackingId}</p>
+              <p style="margin: 5px 0;"><strong>Order Total:</strong> $${order.total.toFixed(2)}</p>
+            </div>
+
+            <div style="margin: 20px 0;">
+              <h3 style="color: #333;">Order Items:</h3>
+              <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px;">
+                ${order.items.map(item => `
+                  <div style="margin-bottom: 10px;">
+                    <span>${item.product.name} x ${item.quantity}</span>
+                    <span style="float: right;">$${(item.product.price * item.quantity).toFixed(2)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <p style="color: #666;">You can track your order using the tracking ID above.</p>
+            
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #888; font-size: 12px;">
+              <p>This is an automated message, please do not reply to this email.</p>
+            </div>
+          </div>
+        `
+      };
+
+      await transporter.sendMail(mailOptions);
+
+    } catch (emailError) {
+      console.error('Failed to send email notification:', emailError);
+      // Continue with the response even if email fails
+    }
+
     res.status(200).json({
       success: true,
       data: {
         order
-      }
+      },
+      message: 'Order updated and notification sent'
     });
+
   } catch (error) {
-    console.error('Error updating order status:', error);
+    console.error('Error updating order:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating order status',
+      message: 'Error updating order',
       error: error.message
     });
   }
+};
+
+// Helper functions for status messages
+const getOrderStatusMessage = (status) => {
+  const messages = {
+    'Processing': 'Your order is now being processed.',
+    'Shipped': 'Great news! Your order has been shipped.',
+    'Delivered': 'Your order has been delivered successfully.',
+    'Cancelled': 'Your order has been cancelled.',
+    'Pending': 'Your order is pending processing.'
+  };
+  return messages[status] || `Your order status has been updated to ${status}`;
+};
+
+const getPaymentStatusMessage = (status) => {
+  const messages = {
+    'Paid': 'Your payment has been successfully processed.',
+    'Pending': 'Your payment is pending confirmation.',
+    'Failed': 'Your payment has failed. Please contact support.',
+    'Refunded': 'Your payment has been refunded.'
+  };
+  return messages[status] || `Your payment status has been updated to ${status}`;
 };
 
 // Get order by tracking ID
