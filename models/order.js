@@ -1,4 +1,3 @@
-// models/Order.js
 const mongoose = require('mongoose');
 
 const orderItemSchema = new mongoose.Schema(
@@ -16,20 +15,15 @@ const orderSchema = new mongoose.Schema(
     items: [orderItemSchema],
     total: { type: Number, required: true },
     paymentMethod: { type: String, enum: ['whatsapp', 'card', 'cod'], required: true },
-    // For card payments we assume immediate processing; for whatsapp and COD, status remains pending.
     paymentStatus: { type: String, enum: ['Pending', 'Processing', 'Completed', 'Failed'], required: true, default: 'Pending' },
-    paymentIntentId: {
-      type: String, 
-      required: true,
-    },
+    paymentIntentId: { type: String, required: true },
+    stripePaymentIntentId: { type: String },
     orderStatus: {
       type: String,
       enum: ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],
       default: 'Pending'
     },
-    paymentIntentId: { type: String, required: true },
-    stripePaymentIntentId: { type: String, required: false },
-    trackingId: { type: String, required: true, unique: true },
+    trackingId: { type: String, required: true, unique: true }
   },
   { timestamps: true }
 );
