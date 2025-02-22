@@ -18,37 +18,42 @@ const getCart = async (req, res) => {
 
 // Add a product to the cart (or update quantity if already exists)
 const addToCart = async (req, res) => {
-  const { productId, quantity } = req.body;
-
-  // Validate productId format
-  if (!mongoose.Types.ObjectId.isValid(productId)) {
-    return res.status(400).json({ message: 'Invalid product ID' });
-  }
-
-  if (!Number.isInteger(quantity) || quantity < 1) {
-    return res.status(400).json({ message: 'Quantity must be a positive integer' });
-  }
-
   try {
-    const product = await Product.findById(productId);
-    if (!product) return res.status(404).json({ message: 'Product not found' });
+    const { productId, quantity } = req.body;
+    const userId = req.user._id;
 
-    let cart = await Cart.findOne({ user: req.user._id });
+    let cart = await Cart.findOne({ user: userId });
+
     if (!cart) {
-      cart = new Cart({ user: req.user._id, items: [] });
+      cart = new Cart({ user: userId, items: [] });
     }
 
-    const itemIndex = cart.items.findIndex(item => item.product.toString() === productId);
-    if (itemIndex > -1) {
-      cart.items[itemIndex].quantity += quantity;
+    const existingItem = cart.items.find(item => 
+      item.product.toString() === productId
+    );
+
+    if (existingItem) {
+      existingItem.quantity += quantity;
     } else {
       cart.items.push({ product: productId, quantity });
     }
 
     await cart.save();
-    res.status(200).json({ message: 'Product added to cart successfully', cart });
+
+    // Calculate total items in cart
+    const cartItemsCount = cart.items.reduce((total, item) => total + item.quantity, 0);
+
+    res.status(200).json({
+      success: true,
+      message: 'Item added to cart',
+      cartItemsCount // Send the updated count
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Error adding to cart', error: error.message });
+    console.error('Add to cart error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error adding item to cart'
+    });
   }
 };
 
@@ -104,9 +109,22 @@ const removeFromCart = async (req, res) => {
   }
 };
 
+const getCartCount = async (req, res) => {
+  try {
+    const cart = await Cart.findOne({ user: req.user._id });
+    const count = cart 
+      ? cart.items.reduce((total, item) => total + item.quantity, 0) 
+      : 0;
+    res.json({ count });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching cart count' });
+  }
+};
+
 module.exports = {
   getCart,
   addToCart,
   updateCartItem,
   removeFromCart,
+  getCartCount,
 };
