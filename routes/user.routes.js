@@ -15,6 +15,7 @@ const {
   updateProfile,
   getUserOrders,
   updatePassword,
+  resetPassword,
 } = require('../controllers/User.controller');
 
 const { getProducts } = require('../controllers/product.controller');
@@ -31,6 +32,7 @@ router.post('/login', loginUser);
 router.post('/verify-token', verifyToken);
 router.post('/forgot-password', forgotPassword);
 router.post('/verify-otp', verifyOTP);
+router.post('/reset-password/:token', resetPassword);
 router.post('/create-new-password', createNewPassword);
 
 // -----------------------------

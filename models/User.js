@@ -14,6 +14,8 @@ const userSchema = new mongoose.Schema(
     adminId: { type: String, unique: true, sparse: true },
     otp: { type: String },
     otpExpiration: { type: Date },
+    resetPasswordToken: String,
+    resetPasswordExpire: Date,
   },
   { timestamps: true }
 );
