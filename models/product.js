@@ -6,7 +6,19 @@ const productSchema = new mongoose.Schema(
     description: { type: String, required: true },
     price: { type: Number, required: true },
     imageUrl: { type: String, required: true },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    category: { 
+      type: String, 
+      required: true,
+      enum: ['Breakfast', 'Lunch', 'Dinner', 'Snacks', 'Beverages', 'Desserts']
+    },
+    isAvailable: { 
+      type: Boolean, 
+      default: true 
+    },
+    createdBy: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'User' 
+    }
   },
   { timestamps: true }
 );

@@ -6,7 +6,9 @@ const {
   addProduct,
   getProducts,
   updateProduct,
-  deleteProduct
+  deleteProduct,
+  getProductsByCategory,
+  toggleProductAvailability
 } = require('../controllers/product.controller');
 
 const { getUsers, updateUser, deleteUser } = require('../controllers/User.controller');
@@ -24,6 +26,8 @@ router.post('/products', addProduct);
 router.put('/products/:productId', updateProduct);
 router.delete('/products/:productId', deleteProduct);
 router.get('/products', getProducts); // Admin can also view all products
+router.get('/products/category/:category', getProductsByCategory);
+router.patch('/products/:productId/toggle-availability', toggleProductAvailability);
 
 // -----------------------------
 // Admin User Management Endpoints
