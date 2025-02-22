@@ -14,6 +14,7 @@ const {
   getUserProfile,
   updateProfile,
   getUserOrders,
+  updatePassword,
 } = require('../controllers/User.controller');
 
 const { getProducts } = require('../controllers/product.controller');
@@ -43,7 +44,7 @@ router.get('/admin/users', authenticateUser, isAdmin, getUsers);
 router.get('/profile', authenticateUser, getUserProfile);
 router.put('/update-profile', authenticateUser, updateProfile);
 router.get('/orders', authenticateUser, getUserOrders);
-
+router.put('/update-password', authenticateUser, updatePassword);
 router.get('/products', getProducts);
 
 module.exports = router;
