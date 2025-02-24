@@ -27,7 +27,7 @@ const checkoutCart = async (req, res) => {
     const cart = await Cart.findOne({ user: req.user._id })
       .populate({
         path: 'items.product',
-        select: 'name price description'
+        select: 'name price description image'
       });
 
     if (!cart || cart.items.length === 0) {
