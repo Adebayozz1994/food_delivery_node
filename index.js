@@ -29,6 +29,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 
+app.get('/', (req, res) => {
+  res.send('Welcome to Food Delivery API!');
+});
+
+
 app.use('/api', userRoutes);  
 app.use('/api/user', userRoutes); 
 app.use('/api/admin', adminRoutes); 
