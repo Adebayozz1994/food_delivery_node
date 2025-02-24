@@ -25,7 +25,7 @@ router.use(authenticateUser, isAdmin);
 router.post('/products', addProduct);
 router.put('/products/:productId', updateProduct);
 router.delete('/products/:productId', deleteProduct);
-router.get('/products', getProducts); // Admin can also view all products
+router.get('/products', getProducts);
 router.get('/products/category/:category', getProductsByCategory);
 router.patch('/products/:productId/toggle-availability', toggleProductAvailability);
 
